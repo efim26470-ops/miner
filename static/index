@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐾 Сапёр (Классический)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none; /* Запрещаем выделение текста при кликах */
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #2b2b2b;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+        .game-container {
+            background: #bdbdbd;
+            padding: 20px;
+            border-radius: 8px;
+            border-top: 3px solid #ffffff;
+            border-left: 3px solid #ffffff;
+            border-right: 3px solid #7b7b7b;
+            border-bottom: 3px solid #7b7b7b;
+            box-shadow: 5px 5px 10px rgba(0,0,0,0.3);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 5px 10px;
+            background: #c0c0c0;
+            border-top: 2px solid #7b7b7b;
+            border-left: 2px solid #7b7b7b;
+            border-right: 2px solid #ffffff;
+            border-bottom: 2px solid #ffffff;
+        }
+        .mine-counter, .smiley {
+            font-family: 'Courier New', monospace;
+            font-size: 24px;
+            font-weight: bold;
+            background: black;
+            color: #ff3333;
+            padding: 2px 8px;
+            border-top: 2px solid #7b7b7b;
+            border-left: 2px solid #7b7b7b;
+            border-right: 2px solid #ffffff;
+            border-bottom: 2px solid #ffffff;
+            text-align: center;
+        }
+        .smiley {
+            width: 50px;
+            background: #c0c0c0;
+            color: black;
+            cursor: pointer;
+            border-top: 2px solid #ffffff;
+            border-left: 2px solid #ffffff;
+            border-right: 2px solid #7b7b7b;
+            border-bottom: 2px solid #7b7b7b;
+            padding: 0;
+            line-height: 40px;
+            font-size: 28px;
+        }
+        .smiley:active {
+            border-top: 2px solid #7b7b7b;
+            border-left: 2px solid #7b7b7b;
+            border-right: 2px solid #ffffff;
+            border-bottom: 2px solid #ffffff;
+        }
+        .board {
+            display: grid;
+            background: #bdbdbd;
+            border-top: 3px solid #7b7b7b;
+            border-left: 3px solid #7b7b7b;
+            border-right: 3px solid #ffffff;
+            border-bottom: 3px solid #ffffff;
+            padding: 3px;
+        }
+        .cell {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            background: #c0c0c0;
+            border-top: 2px solid #ffffff;
+            border-left: 2px solid #ffffff;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            cursor: pointer;
+        }
+        .cell.revealed {
+            border: 1px solid #999;
+            background: #bdbdbd;
+            border-top: 1px solid #808080;
+            border-left: 1px solid #808080;
+        }
+        .cell.flagged::before {
+            content: "⚑";
+            color: #d00000;
+            font-size: 20px;
+            line-height: 1;
+        }
+        /* Цвета цифр как в классике */
+        .num1 { color: #0100fe; }
+        .num2 { color: #017f01; }
+        .num3 { color: #fe0000; }
+        .num4 { color: #010080; }
+        .num5 { color: #7f0100; }
+        .num6 { color: #008080; }
+        .num7 { color: #000000; }
+        .num8 { color: #808080; }
+        .mine-icon { font-size: 18px; }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="header">
+        <div class="mine-counter" id="mine-counter">010</div>
+        <div class="smiley" id="reset-btn">😊</div>
+    </div>
+    <div class="board" id="board"></div>
+</div>
+
+<script>
+    (function() {
+        // --- НАСТРОЙКИ ---
+        const ROWS = 9;
+        const COLS = 9;
+        const TOTAL_MINES = 10;
+
+        // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
+        let board = [];             // двумерный массив состояния клеток
+        let mines = [];             // true/false - есть ли мина
+        let revealed = [];          // true - клетка открыта
+        let flagged = [];           // true - стоит флаг
+        let gameOver = false;
+        let gameWin = false;
+        let minesCount = TOTAL_MINES;
+        let cellsRevealed = 0;      // сколько клеток открыто (для проверки победы)
+
+        const boardEl = document.getElementById('board');
+        const mineCounterEl = document.getElementById('mine-counter');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+        // Форматирование счетчика мин (трехзначное с ведущими нулями)
+        function updateMinesCounter() {
+            let display = minesCount;
+            if (display < 0) display = 0;
+            let str = display.toString();
+            while (str.length < 3) str = '0' + str;
+            mineCounterEl.textContent = str;
+        }
+
+        // Инициализация / сброс игры
+        function initBoard(firstClickRow = -1, firstClickCol = -1) {
+            // Создаем пустые структуры
+            board = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+            mines = Array(ROWS).fill().map(() => Array(COLS).fill(false));
+            revealed = Array(ROWS).fill().map(() => Array(COLS).fill(false));
+            flagged = Array(ROWS).fill().map(() => Array(COLS).fill(false));
+            gameOver = false;
+            gameWin = false;
+            minesCount = TOTAL_MINES;
+            cellsRevealed = 0;
+            
+            // Расставляем мины (если это первый ход - гарантируем что клетка не заминирована)
+            let minesPlaced = 0;
+            while (minesPlaced < TOTAL_MINES) {
+                const r = Math.floor(Math.random() * ROWS);
+                const c = Math.floor(Math.random() * COLS);
+                
+                // Не ставим мину на клетку первого клика и на уже заминированные
+                if (mines[r][c]) continue;
+                if (r === firstClickRow && c === firstClickCol) continue;
+                
+                mines[r][c] = true;
+                minesPlaced++;
+            }
+
+            // Вычисляем числа (количество мин вокруг) для каждой клетки
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (mines[r][c]) {
+                        board[r][c] = -1; // -1 будет означать мину
+                        continue;
+                    }
+                    let count = 0;
+                    for (let dr = -1; dr <= 1; dr++) {
+                        for (let dc = -1; dc <= 1; dc++) {
+                            if (dr === 0 && dc === 0) continue;
+                            const nr = r + dr;
+                            const nc = c + dc;
+                            if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && mines[nr][nc]) {
+                                count++;
+                            }
+                        }
+                    }
+                    board[r][c] = count;
+                }
+            }
+
+            renderBoard();
+            updateMinesCounter();
+            resetBtn.textContent = '😊';
+        }
+
+        // Рендер всей доски
+        function renderBoard() {
+            boardEl.style.gridTemplateColumns = `repeat(${COLS}, 32px)`;
+            boardEl.innerHTML = '';
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Обработчики кликов (назначаем через замыкание, но лучше делегирование - используем его)
+                    // Мы будем обрабатывать клики через делегирование на boardEl
+                    
+                    // Заполняем содержимое в зависимости от состояния
+                    if (revealed[r][c]) {
+                        cell.classList.add('revealed');
+                        if (mines[r][c]) {
+                            cell.innerHTML = '<span class="mine-icon">💣</span>';
+                            cell.style.backgroundColor = '#ffaaaa'; // красный фон для взорванной мины
+                        } else {
+                            const val = board[r][c];
+                            if (val > 0) {
+                                cell.textContent = val;
+                                cell.classList.add(`num${val}`);
+                            }
+                        }
+                    } else {
+                        // Закрытая клетка
+                        if (flagged[r][c]) {
+                            cell.classList.add('flagged');
+                        } else {
+                            cell.textContent = ''; 
+                        }
+                    }
+                    
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        // Рекурсивное открытие пустых областей
+        function revealCell(r, c) {
+            // Проверки выхода за границы, уже открыто, флаг, конец игры
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+            if (revealed[r][c]) return;
+            if (flagged[r][c]) return;
+            if (gameOver || gameWin) return;
+            
+            revealed[r][c] = true;
+            cellsRevealed++;
+            
+            // Если нажали на мину - конец игры
+            if (mines[r][c]) {
+                gameOver = true;
+                // Показываем все мины
+                for (let rr = 0; rr < ROWS; rr++) {
+                    for (let cc = 0; cc < COLS; cc++) {
+                        if (mines[rr][cc]) {
+                            revealed[rr][cc] = true;
+                        }
+                    }
+                }
+                resetBtn.textContent = '😵';
+                renderBoard();
+                return;
+            }
+            
+            // Если клетка пустая (0 мин вокруг) - открываем соседей рекурсивно
+            if (board[r][c] === 0) {
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        revealCell(r + dr, c + dc);
+                    }
+                }
+            }
+            
+            renderBoard();
+            checkWinCondition();
+        }
+
+        // Проверка победы: открыты все клетки без мин
+        function checkWinCondition() {
+            if (gameOver) return;
+            const totalSafeCells = ROWS * COLS - TOTAL_MINES;
+            if (cellsRevealed === totalSafeCells) {
+                gameWin = true;
+                gameOver = true; // чтобы блокировать дальнейшие ходы
+                resetBtn.textContent = '😎';
+                // Помечаем все оставшиеся мины флажками (для красоты)
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (mines[r][c] && !flagged[r][c]) {
+                            flagged[r][c] = true;
+                        }
+                    }
+                }
+                minesCount = 0;
+                updateMinesCounter();
+                renderBoard();
+                alert('🎉 Поздравляем! Вы выиграли!');
+            }
+        }
+
+        // Установка/снятие флага
+        function toggleFlag(r, c) {
+            if (gameOver || gameWin) return;
+            if (revealed[r][c]) return;
+            
+            if (!flagged[r][c]) {
+                flagged[r][c] = true;
+                minesCount--;
+            } else {
+                flagged[r][c] = false;
+                minesCount++;
+            }
+            
+            updateMinesCounter();
+            renderBoard();
+        }
+
+        // Обработчик кликов на доске (делегирование событий)
+        function handleBoardClick(e) {
+            const cell = e.target.closest('.cell');
+            if (!cell) return;
+            
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
+            
+            if (gameOver || gameWin) return;
+            
+            // Если клетка уже открыта - ничего не делаем
+            if (revealed[row][col]) return;
+            
+            // Левый клик (или тап)
+            if (e.type === 'click') {
+                // Если стоит флаг - левый клик не работает
+                if (flagged[row][col]) return;
+                revealCell(row, col);
+            }
+        }
+
+        function handleBoardContextMenu(e) {
+            e.preventDefault(); // Отключаем контекстное меню браузера
+            const cell = e.target.closest('.cell');
+            if (!cell) return;
+            
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
+            
+            if (gameOver || gameWin) return;
+            if (revealed[row][col]) return;
+            
+            toggleFlag(row, col);
+        }
+
+        // Сброс игры
+        function resetGame() {
+            initBoard();
+        }
+
+        // Функция для первого хода с гарантией безопасного старта (вызывается из revealCell, если нужно)
+        // Мы перепишем немного логику первого клика: создадим поле только после первого клика
+        // Это даст "безопасный первый ход". Для этого модифицируем revealCell.
+        // Но чтобы не усложнять, сделаем так: при первом клике, если поле ещё не инициализировано, 
+        // мы вызываем initBoard с координатами первого клика.
+        
+        let firstMove = true;
+        
+        // Переопределим revealCell с учетом первого хода
+        const originalRevealCell = revealCell;
+        revealCell = function(r, c) {
+            if (firstMove) {
+                firstMove = false;
+                initBoard(r, c); // гарантируем, что клетка (r,c) не будет миной
+                // После инициализации нужно продолжить открытие
+            }
+            // Теперь вызываем оригинальную функцию, но она должна использовать уже готовое поле
+            // Однако мы заменили revealCell, поэтому нужно аккуратно.
+            // Лучше переписать логику иначе:
+        };
+
+        // Давайте сделаем проще: инициализация сразу при загрузке, но первый клик может быть на мину.
+        // Это классическое поведение, но можно добавить проверку и перегенерацию.
+        // Для простоты оставим как есть (как в оригинале). 
+        // Но добавим "безопасный старт" через небольшую хитрость.
+        
+        // Вернемся к первоначальной схеме: поле создается сразу, но при первом клике на мину
+        // мы переносим мину в другое место. Это честнее.
+        
+        function safeReveal(r, c) {
+            // Если это самый первый ход в игре и поле уже инициализировано, но там мина - переставим её
+            if (!gameOver && !gameWin && cellsRevealed === 0 && mines[r][c]) {
+                // Ищем первую попавшуюся клетку без мины и переносим мину туда
+                for (let rr = 0; rr < ROWS; rr++) {
+                    let moved = false;
+                    for (let cc = 0; cc < COLS; cc++) {
+                        if (!mines[rr][cc] && !(rr === r && cc === c)) {
+                            mines[rr][cc] = true;
+                            mines[r][c] = false;
+                            moved = true;
+                            break;
+                        }
+                    }
+                    if (moved) break;
+                }
+                // Пересчитываем board (числа)
+                for (let rr = 0; rr < ROWS; rr++) {
+                    for (let cc = 0; cc < COLS; cc++) {
+                        if (mines[rr][cc]) {
+                            board[rr][cc] = -1;
+                        } else {
+                            let count = 0;
+                            for (let dr = -1; dr <= 1; dr++) {
+                                for (let dc = -1; dc <= 1; dc++) {
+                                    if (dr === 0 && dc === 0) continue;
+                                    const nr = rr + dr;
+                                    const nc = cc + dc;
+                                    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && mines[nr][nc]) count++;
+                                }
+                            }
+                            board[rr][cc] = count;
+                        }
+                    }
+                }
+            }
+            
+            // Теперь открываем клетку
+            // Проверки стандартные
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+            if (revealed[r][c]) return;
+            if (flagged[r][c]) return;
+            if (gameOver || gameWin) return;
+            
+            revealed[r][c] = true;
+            cellsRevealed++;
+            
+            if (mines[r][c]) {
+                gameOver = true;
+                for (let rr = 0; rr < ROWS; rr++) {
+                    for (let cc = 0; cc < COLS; cc++) {
+                        if (mines[rr][cc]) revealed[rr][cc] = true;
+                    }
+                }
+                resetBtn.textContent = '😵';
+                renderBoard();
+                return;
+            }
+            
+            if (board[r][c] === 0) {
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        safeReveal(r + dr, c + dc);
+                    }
+                }
+            }
+            
+            renderBoard();
+            checkWinCondition();
+        }
+
+        // Заменим старую функцию на новую
+        revealCell = safeReveal;
+
+        // Привязка событий
+        boardEl.addEventListener('click', (e) => {
+            const cell = e.target.closest('.cell');
+            if (!cell) return;
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
+            if (gameOver || gameWin) return;
+            if (revealed[row][col]) return;
+            if (flagged[row][col]) return;
+            revealCell(row, col);
+        });
+
+        boardEl.addEventListener('contextmenu', handleBoardContextMenu);
+
+        resetBtn.addEventListener('click', () => {
+            initBoard();
+        });
+
+        // Старт игры
+        initBoard();
+    })();
+</script>
+</body>
+</html>
